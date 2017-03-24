@@ -1,0 +1,51 @@
+1. HFile:
+  * An HFile contains a multi-layered index which allows HBase to seek to the data without having to read the whole file.
+  * The multi-level index is like a b+tree:
+        -> Key value pairs are stored in increasing order
+        -> Indexes point by row key to the key value data in 64KB “blocks”
+        -> Each block has its own leaf-index
+        -> The last key of each block is put in the intermediate index
+        -> The root index points to the intermediate index
+  * The trailer points to the meta blocks, and is written at the end of persisting the data to the file.
+  * The trailer also has information like bloom filters and time range info. 
+  * Bloom filters help to skip files that do not contain a certain row key. 
+  * The time range info is useful for skipping the file if it is not in the time range the read is looking for.
+
+2. HRegion Server:
+  * HBase Tables are divided horizontally by row key range into “Regions.”
+  * A region contains all rows in the table between the region’s start key and end key.
+  * Regions are assigned to the nodes in the cluster, called “Region Servers,” and these serve data for reads and writes. 
+  * A region server can serve about 1,000 regions.
+  * A Region Server runs on an HDFS data node and has the following components:
+        -> WAL: Write Ahead Log is a file on the distributed file system
+        -> BlockCache: is the read cache
+        -> MemStore: is the write cache
+
+3. HBase Meta Table:
+  * META table is an HBase table that keeps a list of all regions in the system.
+  * The .META. table is like a b tree.
+  * The .META. table structure is as follows:
+        - Key: region start key,region id
+        - Values: RegionServer
+
+4. Zookeeper:
+  * Zookeeper is used to coordinate shared state information for members of distributed systems.
+  * Region servers and the active HMaster connect with a session to ZooKeeper. 
+  * The ZooKeeper maintains ephemeral nodes for active sessions via heartbeats.
+  * HBase uses ZooKeeper as a distributed coordination service to maintain server state in the cluster.
+  * Zookeeper maintains which servers are alive and available, and provides server failure notification.
+  * Zookeeper uses consensus to guarantee common shared state.
+  * Note that there should be three or five machines for consensus.
+
+5. How read and write operation is performed in HBase:
+  * When the client gives a command to Write, the following steps occur:
+        - Instruction is directed to Write Ahead Log and first writes important logs to it. 
+        - Once the log entry is done, the data to be written is forwarded to MemStore which is actually the RAM of the data node.
+        - All the data is written in MemStore which is faster than RDBMS (Relational databases).
+        - Later, the data is dumped in HFile, where the actual data is stored in HDFS. 
+        - If the MemCache is full, the data is stored in HFile directly.
+        - Once writing data is completed, ACK (Acknowledgement) is sent to client as a confirmation of task completed.
+  * Read process starts when a client sends request to Hbase.
+  * A request is sent to zookeeper which keeps all the status for the distributed system, where HBase is also present
+        - Zookeeper has location for META table which is present in HRegion Server. 
+        - The process continues to HRegionServer and gets to META table, where it gets the region address of table where the data is present to be read.
